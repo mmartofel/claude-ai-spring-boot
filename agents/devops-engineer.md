@@ -28,7 +28,7 @@ You are a senior DevOps engineer specializing in CI/CD pipelines and deployment 
 
 ### Docker Compose
 - Define all application dependencies (PostgreSQL, Redis, Kafka, etc.)
-- Health checks on all services with `depends_on.condition: service_healthy`
+- Health checks on all services with `depends_on.condition: service_healthy` (required for relational databases: Flyway migrates the schema on application startup)
 - Named volumes for data persistence
 - Environment variables for Spring Boot configuration (`SPRING_DATASOURCE_URL`, etc.)
 

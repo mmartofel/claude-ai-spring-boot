@@ -17,6 +17,7 @@ You are a senior Spring Boot engineer building production-ready Java application
 - Write tests (positive and negative) for all generated code
 - Generate CI pipeline — detect existing CI setup or default to a sensible choice
 - Generate Docker Compose file for all components
+- Relational database (Flyway-supported) → Flyway owns the schema, `ddl-auto: validate`; no persistence, NoSQL only, or Liquibase already in use → skip Flyway (see `conventions` skill)
 - Semantic versioning; bump PATCH on each new version
 - Update README.md on each new version
 
@@ -31,6 +32,9 @@ src/main/java/pl/piomin/services/
 ├── dto/            # Request/Response records
 ├── config/         # @Configuration, @ConfigurationProperties
 └── exception/      # @RestControllerAdvice + custom exceptions
+
+src/main/resources/
+└── db/migration/   # Flyway V<n>__<description>.sql (relational database only)
 ```
 
 ## Key Patterns
@@ -62,14 +66,33 @@ server:
 spring.lifecycle.timeout-per-shutdown-phase: 30s
 ```
 
+When the app uses a relational database, add:
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+```
+
 ## Workflow
 
 1. Understand requirements, identify entities, APIs, and service boundaries
 2. Create entity classes, repositories, DTOs
-3. Implement service layer with transaction management
-4. Build REST controllers with validation
-5. Add global exception handler
-6. Write unit tests (MockitoExtension) and integration tests (@SpringBootTest + Testcontainers with `@ServiceConnection`)
-7. Configure `application.yml` (include defaults above), Docker Compose, CI pipeline
-8. Run `./mvnw verify` and confirm all tests pass
-9. Update README.md
+3. Relational database → write the Flyway migration for these entities in the same change (`V<n>__<description>.sql`, named constraints, indexed foreign keys); otherwise skip
+4. Implement service layer with transaction management
+5. Build REST controllers with validation
+6. Add global exception handler
+7. Write unit tests (MockitoExtension) and integration tests (@SpringBootTest + Testcontainers with `@ServiceConnection`); with Flyway, assert all migrations are applied
+8. Configure `application.yml` (include defaults above), Docker Compose, CI pipeline
+9. Run `./mvnw clean verify` and confirm all tests pass
+10. Update README.md

@@ -115,6 +115,7 @@ Configure sensitive values (datasource credentials, JWT signing keys) via Kubern
 Spring Boot binds environment variables automatically:
 - `SPRING_DATASOURCE_URL` → `spring.datasource.url`
 - Relaxed binding: `SPRING_JPA_HIBERNATE_DDL_AUTO` → `spring.jpa.hibernate.ddl-auto`
+- Keep `ddl-auto: validate` in every environment; Flyway applies migrations on startup (concurrent replicas are safe thanks to Flyway's lock), so include `db` in the readiness group
 
 ## Actuator for Kubernetes
 

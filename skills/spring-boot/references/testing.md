@@ -331,6 +331,17 @@ class UserServiceIntegrationTest {
         userRepository.deleteAll();
     }
 
+    @Autowired
+    private Flyway flyway;
+
+    @Test
+    @DisplayName("Should apply all Flyway migrations")
+    void migrationsApplied() {
+        // Only when the app uses Flyway: migrations ran and Hibernate validated the schema
+        assertThat(flyway.info().current()).isNotNull();
+        assertThat(flyway.info().pending()).isEmpty();
+    }
+
     @Test
     @DisplayName("Should create and find user in real database")
     void shouldCreateAndFindUser() {
@@ -474,6 +485,8 @@ class UserReactiveControllerTest {
 
 ## Testing Configuration
 
+With a relational database, prefer Testcontainers with the production engine (see above): Flyway applies the real migrations and `ddl-auto: validate` checks the entities, so tests need no datasource or `ddl-auto` overrides. The H2 config below is a fallback only for projects without Flyway.
+
 ```java
 // application-test.yml
 spring:
@@ -482,7 +495,7 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop   # only without Flyway; with Flyway keep validate
     show-sql: true
     properties:
       hibernate:
