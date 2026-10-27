@@ -25,10 +25,11 @@ Best practices and common pitfalls for JPA/Hibernate in Spring applications.
 | LazyInitializationException | Error outside transaction | DTO projection, JOIN FETCH (not Open Session in View) |
 | Slow queries | Performance issues | Pagination, projections, indexes |
 | Dirty checking overhead | Slow updates | Read-only transactions, DTOs |
-| Lost updates | Concurrent modifications | Optimistic locking (@Version) |
+| Lost updates | Concurrent modifications | Optimistic locking (@Version), version from the client compared explicitly |
 | Entity lost from `HashSet` after persist | `equals`/`hashCode` on generated id | Natural key, or id-based with constant `hashCode` |
 | Stale entities after bulk update | Old values read in same transaction | `@Modifying(clearAutomatically = true)` |
 | Schema drift | Entities and DB out of sync across environments | Flyway migrations + `ddl-auto: validate` (see `conventions`) |
+| 500 after a successful update of a relation | `LazyInitializationException` on an uninitialized proxy | `@Transactional` write, map the response inside it |
 
 ---
 
@@ -227,6 +228,26 @@ spring:
     open-in-view: false  # fetch what the response needs in the service layer
 ```
 
+### Writing a Record with a Relation (OSIV off)
+
+With `open-in-view: false`, a write that loads the record outside a transaction and then calls `save` merges a detached entity; a newly set `@ManyToOne` becomes an uninitialized proxy, and mapping the response throws `LazyInitializationException`. The change is already committed, but the client gets a 500, and its next save meets a stale version.
+
+```java
+@Transactional  // load, change, save and map in one persistence context
+public TaskResponse update(Long id, TaskUpdateRequest request) {
+    Task task = find(id);
+    Person assignee = request.assigneeId() == null ? null : personRepository.findById(request.assigneeId())
+            .orElseThrow(() -> unknownReference("assigneeId"));  // 400, not 404: the request is invalid
+    checkVersion(task, request.version());
+    task.replaceWith(request, assignee);
+    return TaskResponse.from(repository.saveAndFlush(task));  // map inside the transaction
+}
+```
+
+- Create, update and delete of a record with a relation are `@Transactional`, and the response is mapped inside the transaction.
+- Read paths load the relation with `@EntityGraph(attributePaths = "assignee")` on `findById` and `findAll(Specification, Pageable)`, so a page does not issue one query per row.
+- Test none → A, A → B and A → none against the real database (Testcontainers). A mocked `@WebMvcTest` never sees a JPA proxy, and A → B is the case that fails.
+
 ---
 
 ## Transaction Management
@@ -320,7 +341,7 @@ public class Product {
     // getters/setters
 }
 
-// Handling optimistic lock failure
+// The client sends the version it read; compare it explicitly
 @Service
 public class ProductService {
     private final ProductRepository repo;
@@ -330,18 +351,22 @@ public class ProductService {
     }
 
     @Transactional
-    public Product updatePrice(Long id, BigDecimal newPrice) {
+    public ProductResponse update(Long id, ProductUpdateRequest request) {
         Product product = repo.findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Product not found"));
-        product.setPrice(newPrice);
-        try {
-            return repo.save(product);
-        } catch (OptimisticLockingFailureException e) {
-            throw new ConflictException("Product was modified by another user");
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Product " + id + " not found"));
+        if (!request.version().equals(product.getVersion())) {
+            throw new ObjectOptimisticLockingFailureException(Product.class, id);
         }
+        product.setName(request.name());
+        product.setPrice(request.price());
+        return ProductResponse.from(repo.saveAndFlush(product));  // flushed: the response has the new version
     }
 }
 ```
+
+- `@Version` only protects the window between this transaction's read and its commit. Across HTTP requests, the client sends the `version` it read and the service compares it: Hibernate ignores a version set on a managed entity, so `product.setVersion(request.version())` does not detect a stale update.
+- Do not wrap `save()` in `try/catch (OptimisticLockingFailureException)` inside a `@Transactional` method: the `UPDATE` runs at flush or commit, after the `try` block has ended. Let the exception propagate and map `ObjectOptimisticLockingFailureException` to 409 in the `@RestControllerAdvice` (Problem Details without `errors`, so a client can tell it from a field conflict).
+- Return the entity's `version` in every response, and require it in the update request.
 
 ---
 
@@ -581,7 +606,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 | N+1 in loop | JOIN FETCH or @EntityGraph |
 | LazyInitializationException | JOIN FETCH in query or @Transactional on service |
 | Read-only queries slow | `@Transactional(readOnly = true)` |
-| Concurrent updates | `@Version` + optimistic locking |
+| Concurrent updates over HTTP | `@Version`, client sends `version`, compare, 409 on mismatch |
 | Entity equality | `@NaturalId`, or id-based `equals` with constant `hashCode` |
 | Bidirectional association | `add*`/`remove*` helper methods; `Set` for `@ManyToMany` |
 | Bulk UPDATE/DELETE | `@Modifying(clearAutomatically = true, flushAutomatically = true)` |

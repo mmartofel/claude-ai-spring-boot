@@ -393,9 +393,13 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: when-authorized
+      show-components: always      # each component's status (db, diskSpace, ...) for anonymous callers
+      show-details: when-authorized # details (host names, versions) only with a token
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db
   health:
     livenessState:
       enabled: true
@@ -405,6 +409,12 @@ management:
     tags:
       application: ${spring.application.name}
 ```
+
+Status endpoints. Permitting `/actuator/health/**` (with the probes) applies to every app; the rest is **required only when the API is built for a UI** that shows the API status and version (`conventions` skill):
+- `GET /actuator/health` answers `{"status": "UP", "components": {...}}`, and a non-2xx status with `DOWN`/`OUT_OF_SERVICE`. Components without details tell a client or a dashboard what is down without leaking infrastructure.
+- `GET /actuator/info` answers `{"build": {"version": ...}}` once the `spring-boot-maven-plugin` runs the `build-info` goal (see `ui-contract.md`). It is the running version, the same as the OpenAPI `info.version`.
+- `SecurityConfig` permits `/actuator/health/**` (including the `liveness`/`readiness` probes) and `/actuator/info`, before any other rule. Every other Actuator endpoint (`env`, `metrics`, `prometheus`, ...) needs a token or a separate management port.
+- An integration test asserts that both answer without a token, that `health` lists `db`, that `info` `build.version` equals the contract's `info.version`, and that `/actuator/env` returns 401.
 
 ```java
 @Component
@@ -705,7 +715,7 @@ public class ClientConfig {
 <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.1.0</version>
+    <version>4.1.1</version> <!-- use the latest Spring Boot 4.x release -->
 </parent>
 
 <plugin>

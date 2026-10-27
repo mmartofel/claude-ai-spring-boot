@@ -1,6 +1,6 @@
-# Spring Boot Plugin for Claude Code (v1.1)
+# Spring Boot Plugin for Claude Code (v1.2)
 
-A Claude Code plugin with production-ready skills and agents for building Spring Boot 4.x / Java 21+ applications. Install the plugin and start generating your app — the skills and agents guide Claude to follow best practices for REST APIs, JPA, Flyway database migrations, security, testing, cloud-native deployment, and Kubernetes.
+A Claude Code plugin with production-ready skills and agents for building Spring Boot 4.x / Java 21+ applications. Install the plugin and start generating your app — the skills and agents guide Claude to follow best practices for REST APIs with Problem Details errors, JPA, Flyway database migrations, security, testing, cloud-native deployment, and Kubernetes.
 
 ## Installation
 
@@ -31,8 +31,8 @@ Specialized agents that Claude Code can invoke for specific tasks:
 
 | Agent | Purpose |
 |-------|---------|
-| `spring-boot-engineer` | Build Spring Boot 4.x apps with layered architecture |
-| `code-reviewer` | Review code for correctness, security, Spring Boot conventions |
+| `spring-boot-engineer` | Build Spring Boot 4.x apps with layered architecture and Problem Details errors; adds the OpenAPI contract rules when the API is built for a UI |
+| `code-reviewer` | Review code for correctness, security, Spring Boot conventions, and API contract quality for APIs built for a UI |
 | `kubernetes-specialist` | K8s deployments, probes, ConfigMap/Secret, Prometheus, Skaffold |
 | `devops-engineer` | CI/CD pipelines, Paketo Buildpacks, Skaffold |
 | `docker-expert` | Multi-stage Dockerfiles, Paketo Buildpacks, image optimization |
@@ -44,13 +44,13 @@ Reusable knowledge that Claude loads contextually:
 
 | Skill | What it teaches |
 |-------|-----------------|
-| `conventions` | Mandatory project rules: No Lombok, constructor injection, RestClient, testing standards, conditional Flyway for relational databases |
-| `spring-boot` | Core Spring Boot development with 5 reference guides (web, data incl. Flyway migrations, security, cloud, testing) |
+| `conventions` | Mandatory project rules: No Lombok, constructor injection, RestClient, testing standards, conditional Flyway for relational databases, Problem Details, conditional OpenAPI contract rules for APIs built for a UI |
+| `spring-boot` | Core Spring Boot development with 6 reference guides (web incl. Problem Details and paging, OpenAPI with springdoc 3, data incl. Flyway migrations, security, cloud, testing) |
 | `code-quality` | Clean code principles, API contracts, null safety, exception handling |
 | `design-patterns` | Classic patterns (Factory, Builder, Strategy) + enterprise (Saga, Outbox, CQRS) |
-| `testing-patterns` | JUnit 5, Mockito, MockMvc, RestTestClient, Testcontainers with @ServiceConnection |
+| `testing-patterns` | JUnit 5, Mockito, MockMvc, RestTestClient, Testcontainers with @ServiceConnection, relation and status-endpoint integration tests, Podman |
 | `java-modern` | Java 21+ features: records, sealed classes, pattern matching, virtual threads |
-| `jpa-patterns` | JPA/Hibernate pitfalls (N+1, lazy loading), Hibernate 6/7, optimistic locking, schema drift |
+| `jpa-patterns` | JPA/Hibernate pitfalls (N+1, lazy loading), Hibernate 6/7, optimistic locking across HTTP requests, relation writes with OSIV off, schema drift |
 | `logging-patterns` | Structured JSON logging, SLF4J, MDC, AI-friendly formats |
 
 ### Key Conventions
@@ -63,6 +63,8 @@ The plugin enforces these rules via the `conventions` skill:
 - **RestTestClient** with `@AutoConfigureRestTestClient` for integration tests
 - **Testcontainers** with `@ServiceConnection` (not `@DynamicPropertySource`)
 - **Jakarta Persistence** (not `javax.persistence`)
+- **Problem Details** (RFC 9457) for every error; **paged lists** as `PagedModel`; **optimistic locking** with `@Version` and 409
+- **OpenAPI contract rules**, only when the API is built for a UI (see below)
 - **Flyway** owns the schema (`ddl-auto: validate`) when the API persists to a Flyway-supported relational database; skipped for APIs without persistence, NoSQL-only APIs, or projects already using Liquibase
 - **Maven** with `pl.piomin.services` group ID
 - **CI pipeline** — auto-detected from existing project config
@@ -92,6 +94,18 @@ claude
 ```
 
 For a relational database like PostgreSQL, the generated app includes Flyway migrations in `src/main/resources/db/migration`, `ddl-auto: validate`, and Testcontainers tests that verify all migrations were applied. APIs without persistence or with NoSQL stores get no Flyway configuration.
+
+### APIs built for a UI
+
+Some rules are **required only when the API is built for a UI** (or another client generated from its OpenAPI contract), for example a UI made from [crud-ui-blueprint](https://github.com/mmartofel/crud-ui-blueprint). Say so in your prompt ("the API backs a web UI generated from its OpenAPI contract") or in the project's `CLAUDE.md`. The `conventions` skill then loads `skills/spring-boot/references/ui-contract.md`, the single source of these rules:
+
+- `/api` base path, same origin (no CORS), operationIds the UI's generated client relies on
+- an OpenAPI contract generated by springdoc 3, exported to `contract/openapi.json` by a test and checked in CI, with `info.version` from the build
+- Problem Details field errors with a fixed set of codes the UI translates, `PUT` with a required `version`
+- typed list filters, relations as `{id, label}` summaries, 409 `in-use` instead of cascading deletes
+- the Keycloak realm layout the UI logs in with, public `/actuator/health` and `/actuator/info`, and a README "Connect a UI" section
+
+Without a UI, none of this is required: the generated API keeps Problem Details, paging and optimistic locking, and skips the contract export.
 
 You can also invoke skills and agents directly:
 
@@ -128,6 +142,7 @@ You can also invoke skills and agents directly:
 │   │   └── references/
 │   │       ├── cloud.md
 │   │       ├── data.md
+│   │       ├── ui-contract.md
 │   │       ├── security.md
 │   │       ├── testing.md
 │   │       └── web.md

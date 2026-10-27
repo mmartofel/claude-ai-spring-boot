@@ -190,16 +190,16 @@ public BigDecimal calculateShipping(Address address) {
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handle(Exception ex) {
+    public ProblemDetail handle(Exception ex) {
         return switch (ex) {
             case EntityNotFoundException e ->
-                ResponseEntity.status(404).body(new ErrorResponse(e.getMessage()));
+                ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
             case DataIntegrityViolationException e ->
-                ResponseEntity.status(409).body(new ErrorResponse("Duplicate entry"));
+                ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Duplicate entry");
             case ConstraintViolationException e ->
-                ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+                ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request");
             default ->
-                ResponseEntity.internalServerError().body(new ErrorResponse("Unexpected error"));
+                ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
         };
     }
 }

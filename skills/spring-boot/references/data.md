@@ -40,11 +40,11 @@ public class User {
 
     @CreatedDate
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
     @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @Version
     private Long version;
@@ -53,8 +53,8 @@ public class User {
     public User() {}
 
     public User(Long id, String email, String password, String username, Boolean active,
-                List<Address> addresses, Set<Role> roles, LocalDateTime createdAt,
-                LocalDateTime updatedAt, Long version) {
+                List<Address> addresses, Set<Role> roles, Instant createdAt,
+                Instant updatedAt, Long version) {
         this.id = id;
         this.email = email;
         this.password = password;
@@ -89,11 +89,11 @@ public class User {
     public Set<Role> getRoles() { return roles; }
     public void setRoles(Set<Role> roles) { this.roles = roles; }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
@@ -168,6 +168,17 @@ public class UserSpecifications {
             return cb.equal(roles.get("name"), roleName);
         };
     }
+
+    /** Case-insensitive "contains" on any of the attributes; LIKE wildcards in {@code q} match literally. */
+    public static Specification<User> search(String q, String... attributes) {
+        if (q == null || q.isBlank()) {
+            return null;
+        }
+        String like = "%" + q.toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return (root, query, cb) -> cb.or(Arrays.stream(attributes)
+                .map(attribute -> cb.like(cb.lower(root.get(attribute)), like, '\\'))
+                .toArray(Predicate[]::new));
+    }
 }
 
 // Usage in service
@@ -189,6 +200,10 @@ public class UserService {
     }
 }
 ```
+
+- Escape `%`, `_` and `\` in user input passed to `LIKE`, otherwise `q=%` matches everything and `q=a_c` matches `abc`.
+- Bind query filters to a record (`@ParameterObject @Valid UserFilter filter` in the controller) that builds the `Specification`; filters combine with AND, and an invalid value returns 400 with a field error named after the parameter.
+- A `Specification` query that maps a relation into the response loads it with `@EntityGraph` on `findAll(Specification, Pageable)` (see `jpa-patterns`).
 
 ## Transaction Management
 
@@ -293,7 +308,7 @@ public abstract class AuditableEntity {
 
     @CreatedDate
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @CreatedBy
     @Column(nullable = false, updatable = false, length = 100)
@@ -301,20 +316,20 @@ public abstract class AuditableEntity {
 
     @LastModifiedDate
     @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @LastModifiedBy
     @Column(nullable = false, length = 100)
     private String updatedBy;
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
 
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
     public String getUpdatedBy() { return updatedBy; }
     public void setUpdatedBy(String updatedBy) { this.updatedBy = updatedBy; }

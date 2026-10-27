@@ -20,8 +20,8 @@ Enterprise Spring Boot 4.x development with focus on clean architecture and prod
 2. **Design** - Plan architecture, confirm design before coding
 3. **Implement** - Build with constructor injection and layered architecture; for a relational database, write Flyway migrations alongside entities (`ddl-auto: validate`)
 4. **Secure** - Add Spring Security, OAuth2, method security; verify tests pass
-5. **Test** - Write unit, integration tests; run `./mvnw test` and confirm all pass
-6. **Deploy** - Configure health checks via Actuator; validate `/actuator/health` returns UP
+5. **Test** - Write unit, integration tests; run `./mvnw clean verify` and confirm all pass, with integration tests running (not skipped)
+6. **Deploy** - Configure health checks via Actuator; validate `/actuator/health` returns UP and `/actuator/info` shows `build.version`
 
 ## Quick Start Templates
 
@@ -117,25 +117,42 @@ public record ProductResponse(Long id, String name, BigDecimal price) {
 }
 ```
 
-### Global Exception Handler
+### Global Exception Handler (Problem Details)
 ```java
 @RestControllerAdvice
-public class GlobalExceptionHandler {
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, String> handleValidation(MethodArgumentNotValidException ex) {
-        return ex.getBindingResult().getFieldErrors().stream()
-            .collect(Collectors.toMap(FieldError::getField,
-                    error -> error.getDefaultMessage() != null ? error.getDefaultMessage() : "Invalid"));
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    public record FieldMessage(String field, String code, String message) {}
+
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
+                                                                  HttpStatusCode status, WebRequest request) {
+        ex.getBody().setProperty("errors", ex.getFieldErrors().stream()
+                .map(e -> new FieldMessage(e.getField(), code(e.getCode()), e.getDefaultMessage()))
+                .toList());
+        return super.handleMethodArgumentNotValid(ex, headers, status, request);
     }
 
-    @ExceptionHandler(EntityNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Map<String, String> handleNotFound(EntityNotFoundException ex) {
-        return Map.of("error", ex.getMessage());
+    private static String code(String constraint) {
+        return switch (constraint) {
+            case "NotBlank", "NotNull" -> "required";
+            case null, default -> "invalid";
+        };
+    }
+
+    @ExceptionHandler
+    ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Record was changed by someone else; reload and retry");
+    }
+
+    @ExceptionHandler
+    ProblemDetail handleUnexpected(Exception ex) {
+        logger.error("Unexpected error", ex);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error");
     }
 }
 ```
+Every error is RFC 9457 Problem Details with field errors in `errors: [{field, code, message}]`. Full handler (unique constraints, bad sort, documented codes): `references/web.md`.
 
 ### Test Slice
 ```java
@@ -166,7 +183,8 @@ Load detailed patterns based on context:
 
 | Topic | Reference | When to Load |
 |-------|-----------|-------------|
-| Web/REST | `references/web.md` | Controllers, validation, exception handling, Problem Details (RFC 7807) |
+| Web/REST | `references/web.md` | Controllers, paged lists, validation, PUT and `version`, Problem Details (RFC 9457) with `errors[]` |
+| API built for a UI | `references/ui-contract.md` | Only when a UI or generated client consumes the OpenAPI contract (see `conventions`): `/api`, springdoc 3 contract export, error codes, filters, relations, Keycloak, "Connect a UI" |
 | Data Access | `references/data.md` | JPA, repositories, transactions, queries, Flyway migrations |
 | Security | `references/security.md` | Spring Security 6, OAuth2, JWT, auth |
 | Cloud/Config | `references/cloud.md` | Config server, discovery, resilience, virtual threads, HTTP interfaces, GraalVM native, OTLP tracing |
@@ -183,6 +201,9 @@ Load detailed patterns based on context:
 - Global exception handling with `@RestControllerAdvice`
 - Externalize secrets (use env vars, not properties files)
 - Flyway migrations + `ddl-auto: validate` when persisting to a relational database (skip Flyway otherwise)
+- Errors as Problem Details; list endpoints return `PagedModel`
+- Permit `/actuator/health/**` so the liveness and readiness probes work behind security
+- **Only when the API is built for a UI** (see `conventions`, "REST API Built for a UI"): follow `references/ui-contract.md`
 
 ### MUST NOT DO
 - Field injection (`@Autowired` on fields)
@@ -192,6 +213,15 @@ Load detailed patterns based on context:
 - Use deprecated Spring Boot 2.x/3.x patterns
 - Hardcode URLs, credentials, environment values
 - Use `ddl-auto: update`/`create` outside tests, or edit an already-applied migration
+- Return `Page`/`PageImpl` from a controller, or put `@EnableSpringDataWebSupport` on the application class (`@WebMvcTest` registers it twice)
+- Put `@ApiResponse` on controller methods (springdoc 3 then drops the success response; use an `OpenApiCustomizer`)
+- Return an exception's message from the catch-all handler
+
+### Spring Boot 4 / Spring Data 4 Notes
+- `PropertyReferenceException` and `TypeInformation` moved to `org.springframework.data.core`
+- `@MockBean`/`@SpyBean` are removed: use `@MockitoBean`/`@MockitoSpyBean`
+- `@WebMvcTest` creates no repositories: every repository a controller injects needs a `@MockitoBean` in its test
+- Build with `./mvnw clean verify`: classes compiled by the IDE in `target` can hide `javac` errors
 
 ## Architecture Patterns
 
@@ -270,7 +300,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health/**").permitAll()  // + "/actuator/info" when built for a UI
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();
