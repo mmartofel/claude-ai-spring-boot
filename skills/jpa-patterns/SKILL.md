@@ -26,6 +26,7 @@ Best practices and common pitfalls for JPA/Hibernate in Spring applications.
 | Slow queries | Performance issues | Pagination, projections, indexes |
 | Dirty checking overhead | Slow updates | Read-only transactions, DTOs |
 | Lost updates | Concurrent modifications | Optimistic locking (@Version) |
+| Schema drift | Entities and DB out of sync across environments | Flyway migrations + `ddl-auto: validate` (see `conventions`) |
 
 ---
 

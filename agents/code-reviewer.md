@@ -39,6 +39,14 @@ You are a senior Java code reviewer for Spring Boot 4.x / Java 21+ applications.
 - `@RestControllerAdvice` for global exception handling
 - Layered architecture: Controller → Service → Repository
 
+### Database Schema (relational databases)
+- `spring.jpa.hibernate.ddl-auto: update|create|create-drop` outside test configuration → Flyway migrations + `validate`
+- Modified `V<n>__*.sql` that was already applied (checksum mismatch, startup failure) → add a new migration instead
+- Entity change without a matching migration in the same change
+- New `NOT NULL` column without `DEFAULT` or backfill
+- Unnamed constraints/indexes, or foreign key columns without an index
+- Flyway dependency in a project with no relational database (unnecessary)
+
 ### Deprecated / Outdated Patterns
 - Flag `javax.persistence.*` imports (must be `jakarta.persistence.*`)
 - Flag `WebSecurityConfigurerAdapter` (use `SecurityFilterChain` bean)
