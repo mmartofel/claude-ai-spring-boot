@@ -28,6 +28,7 @@ Best practices and common pitfalls for JPA/Hibernate in Spring applications.
 | Lost updates | Concurrent modifications | Optimistic locking (@Version) |
 | Entity lost from `HashSet` after persist | `equals`/`hashCode` on generated id | Natural key, or id-based with constant `hashCode` |
 | Stale entities after bulk update | Old values read in same transaction | `@Modifying(clearAutomatically = true)` |
+| Schema drift | Entities and DB out of sync across environments | Flyway migrations + `ddl-auto: validate` (see `conventions`) |
 
 ---
 

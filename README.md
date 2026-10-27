@@ -1,6 +1,6 @@
-# Spring Boot Plugin for Claude Code (v1.0)
+# Spring Boot Plugin for Claude Code (v1.1)
 
-A Claude Code plugin with production-ready skills and agents for building Spring Boot 4.x / Java 21+ applications. Install the plugin and start generating your app — the skills and agents guide Claude to follow best practices for REST APIs, JPA, security, testing, cloud-native deployment, and Kubernetes.
+A Claude Code plugin with production-ready skills and agents for building Spring Boot 4.x / Java 21+ applications. Install the plugin and start generating your app — the skills and agents guide Claude to follow best practices for REST APIs, JPA, Flyway database migrations, security, testing, cloud-native deployment, and Kubernetes.
 
 ## Installation
 
@@ -44,13 +44,13 @@ Reusable knowledge that Claude loads contextually:
 
 | Skill | What it teaches |
 |-------|-----------------|
-| `conventions` | Mandatory project rules: No Lombok, constructor injection, RestClient, testing standards |
-| `spring-boot` | Core Spring Boot development with 5 reference guides (web, data, security, cloud, testing) |
+| `conventions` | Mandatory project rules: No Lombok, constructor injection, RestClient, testing standards, conditional Flyway for relational databases |
+| `spring-boot` | Core Spring Boot development with 5 reference guides (web, data incl. Flyway migrations, security, cloud, testing) |
 | `code-quality` | Clean code principles, API contracts, null safety, exception handling |
 | `design-patterns` | Classic patterns (Factory, Builder, Strategy) + enterprise (Saga, Outbox, CQRS) |
 | `testing-patterns` | JUnit 5, Mockito, MockMvc, RestTestClient, Testcontainers with @ServiceConnection |
 | `java-modern` | Java 21+ features: records, sealed classes, pattern matching, virtual threads |
-| `jpa-patterns` | JPA/Hibernate pitfalls (N+1, lazy loading), Hibernate 6/7, optimistic locking |
+| `jpa-patterns` | JPA/Hibernate pitfalls (N+1, lazy loading), Hibernate 6/7, optimistic locking, schema drift |
 | `logging-patterns` | Structured JSON logging, SLF4J, MDC, AI-friendly formats |
 
 ### Key Conventions
@@ -63,6 +63,7 @@ The plugin enforces these rules via the `conventions` skill:
 - **RestTestClient** with `@AutoConfigureRestTestClient` for integration tests
 - **Testcontainers** with `@ServiceConnection` (not `@DynamicPropertySource`)
 - **Jakarta Persistence** (not `javax.persistence`)
+- **Flyway** owns the schema (`ddl-auto: validate`) when the API persists to a Flyway-supported relational database; skipped for APIs without persistence, NoSQL-only APIs, or projects already using Liquibase
 - **Maven** with `pl.piomin.services` group ID
 - **CI pipeline** — auto-detected from existing project config
 - **Docker Compose** for local dependencies
@@ -89,6 +90,8 @@ cd my-project
 claude
 > "Build a REST API for managing orders with PostgreSQL"
 ```
+
+For a relational database like PostgreSQL, the generated app includes Flyway migrations in `src/main/resources/db/migration`, `ddl-auto: validate`, and Testcontainers tests that verify all migrations were applied. APIs without persistence or with NoSQL stores get no Flyway configuration.
 
 You can also invoke skills and agents directly:
 

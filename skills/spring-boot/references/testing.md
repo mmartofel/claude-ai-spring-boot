@@ -151,7 +151,7 @@ class UserControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private UserService userService;
 
     @Autowired
@@ -331,6 +331,17 @@ class UserServiceIntegrationTest {
         userRepository.deleteAll();
     }
 
+    @Autowired
+    private Flyway flyway;
+
+    @Test
+    @DisplayName("Should apply all Flyway migrations")
+    void migrationsApplied() {
+        // Only when the app uses Flyway: migrations ran and Hibernate validated the schema
+        assertThat(flyway.info().current()).isNotNull();
+        assertThat(flyway.info().pending()).isEmpty();
+    }
+
     @Test
     @DisplayName("Should create and find user in real database")
     void shouldCreateAndFindUser() {
@@ -401,7 +412,7 @@ class UserReactiveControllerTest {
     @Autowired
     private WebTestClient webTestClient;
 
-    @MockBean
+    @MockitoBean
     private UserReactiveService userService;
 
     @Test
@@ -474,6 +485,8 @@ class UserReactiveControllerTest {
 
 ## Testing Configuration
 
+With a relational database, prefer Testcontainers with the production engine (see above): Flyway applies the real migrations and `ddl-auto: validate` checks the entities, so tests need no datasource or `ddl-auto` overrides. The H2 config below is a fallback only for projects without Flyway.
+
 ```java
 // application-test.yml
 spring:
@@ -482,7 +495,7 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop   # only without Flyway; with Flyway keep validate
     show-sql: true
     properties:
       hibernate:
@@ -554,7 +567,8 @@ public class TestDataFactory {
 | `@WebMvcTest` | Test MVC controllers with mocked services |
 | `@WebFluxTest` | Test reactive controllers |
 | `@DataJpaTest` | Test JPA repositories with in-memory database |
-| `@MockBean` | Add mock bean to Spring context |
+| `@MockitoBean` | Add mock bean to Spring context (replaces `@MockBean`, removed in Spring Boot 4) |
+| `@MockitoSpyBean` | Wrap a Spring bean in a Mockito spy (replaces `@SpyBean`) |
 | `@WithMockUser` | Mock authenticated user for security tests |
 | `@Testcontainers` | Enable Testcontainers support |
 | `@ActiveProfiles` | Activate specific Spring profiles for test |

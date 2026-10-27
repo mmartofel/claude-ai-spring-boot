@@ -18,7 +18,7 @@ Enterprise Spring Boot 4.x development with focus on clean architecture and prod
 
 1. **Analyze** - Understand requirements, identify service boundaries, APIs, data models
 2. **Design** - Plan architecture, confirm design before coding
-3. **Implement** - Build with constructor injection and layered architecture
+3. **Implement** - Build with constructor injection and layered architecture; for a relational database, write Flyway migrations alongside entities (`ddl-auto: validate`)
 4. **Secure** - Add Spring Security, OAuth2, method security; verify tests pass
 5. **Test** - Write unit, integration tests; run `./mvnw test` and confirm all pass
 6. **Deploy** - Configure health checks via Actuator; validate `/actuator/health` returns UP
@@ -142,7 +142,7 @@ public class GlobalExceptionHandler {
 @WebMvcTest(ProductController.class)
 class ProductControllerTest {
     @Autowired MockMvc mockMvc;
-    @MockBean ProductService service;
+    @MockitoBean ProductService service;
 
     @Test
     void createProduct_validRequest_returns201() throws Exception {
@@ -167,7 +167,7 @@ Load detailed patterns based on context:
 | Topic | Reference | When to Load |
 |-------|-----------|-------------|
 | Web/REST | `references/web.md` | Controllers, validation, exception handling, Problem Details (RFC 7807) |
-| Data Access | `references/data.md` | JPA, repositories, transactions, queries |
+| Data Access | `references/data.md` | JPA, repositories, transactions, queries, Flyway migrations |
 | Security | `references/security.md` | Spring Security 6, OAuth2, JWT, auth |
 | Cloud/Config | `references/cloud.md` | Config server, discovery, resilience, virtual threads, HTTP interfaces, GraalVM native, OTLP tracing |
 | Testing | `references/testing.md` | Unit, integration, slice tests, Testcontainers @ServiceConnection |
@@ -182,6 +182,7 @@ Load detailed patterns based on context:
 - Type-safe config with `@ConfigurationProperties`
 - Global exception handling with `@RestControllerAdvice`
 - Externalize secrets (use env vars, not properties files)
+- Flyway migrations + `ddl-auto: validate` when persisting to a relational database (skip Flyway otherwise)
 
 ### MUST NOT DO
 - Field injection (`@Autowired` on fields)
@@ -190,6 +191,7 @@ Load detailed patterns based on context:
 - Store secrets in application.properties
 - Use deprecated Spring Boot 2.x/3.x patterns
 - Hardcode URLs, credentials, environment values
+- Use `ddl-auto: update`/`create` outside tests, or edit an already-applied migration
 
 ## Architecture Patterns
 

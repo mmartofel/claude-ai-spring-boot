@@ -108,7 +108,7 @@ class ProductControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private ProductService productService;
 
     @Autowired
@@ -216,7 +216,7 @@ class ProductRepositoryTest {
 ```java
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
 class ProductIntegrationTest {
 
@@ -229,6 +229,28 @@ class ProductIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private Flyway flyway;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Test
+    @DisplayName("Should apply all Flyway migrations")
+    void migrationsApplied() {
+        assertThat(flyway.info().current()).isNotNull();
+        assertThat(flyway.info().pending()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should reject row violating DB constraint")
+    void databaseRejectsNegativePrice() {
+        // Migration defines CONSTRAINT ck_products_price CHECK (price >= 0)
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO products (name, price, version) VALUES ('Widget', -1, 0)"))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
 
     @BeforeEach
     void setUp() {
