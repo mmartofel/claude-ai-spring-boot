@@ -142,7 +142,9 @@ class ProductControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.name").exists());
+            .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.errors[0].field").value("name"))
+            .andExpect(jsonPath("$.errors[0].code").value("required"));
 
         verify(productService, never()).create(any());
     }
@@ -152,13 +154,33 @@ class ProductControllerTest {
     @DisplayName("GET /api/v1/products/999 - returns 404")
     void getProduct_notFound_returns404() throws Exception {
         when(productService.findById(999L))
-            .thenThrow(new EntityNotFoundException("Product not found"));
+            .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Product 999 not found"));
 
         mockMvc.perform(get("/api/v1/products/999"))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.status").value(404));
+    }
+
+    // ✅ Negative - stale version
+    @Test
+    @DisplayName("PUT /api/v1/products/1 - stale version returns 409 without errors")
+    void updateProduct_staleVersion_returns409() throws Exception {
+        when(productService.update(eq(1L), any()))
+            .thenThrow(new ObjectOptimisticLockingFailureException(Product.class, 1L));
+
+        mockMvc.perform(put("/api/v1/products/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Widget","price":10.0,"version":0}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errors").doesNotExist());
     }
 }
 ```
+
+- Assert error bodies as Problem Details (`$.status`, `$.errors[*].field`, `$.errors[*].code`), never on `message` texts.
+- `@WebMvcTest` creates no repositories or services: every bean the controller injects needs a `@MockitoBean`, including a repository newly added to an existing controller.
 
 ---
 
@@ -236,6 +258,9 @@ class ProductIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private BuildProperties buildProperties;
+
     @Test
     @DisplayName("Should apply all Flyway migrations")
     void migrationsApplied() {
@@ -293,7 +318,37 @@ class ProductIntegrationTest {
             .exchange()
             .expectStatus().isNotFound();
     }
+
+    // Only when the API is built for a UI (public /actuator/info, see conventions)
+    @Test
+    @DisplayName("Health and info are public; other Actuator endpoints are not")
+    void statusEndpointsArePublic() {
+        restTestClient.get().uri("/actuator/health").exchange()
+            .expectStatus().isOk()
+            .expectBody().jsonPath("$.components.db.status").isEqualTo("UP");
+        restTestClient.get().uri("/actuator/info").exchange()
+            .expectStatus().isOk()
+            .expectBody().jsonPath("$.build.version").isEqualTo(buildProperties.getVersion());
+        restTestClient.get().uri("/actuator/env").exchange()
+            .expectStatus().isUnauthorized();
+    }
 }
+```
+
+What the integration tests cover besides CRUD (the last two only when the API is built for a UI, see `conventions`):
+- **Relations:** none → A, A → B and A → none for every `@ManyToOne` the API lets a client change, against the real database. A → B is the case that fails with `LazyInitializationException` when the write is not `@Transactional`; a mocked `@WebMvcTest` cannot see it.
+- **Referenced delete:** deleting a record that is still referenced returns 409, and the row is still there.
+- **Stale version:** two updates with the same `version`; the second returns 409.
+- **Contract export:** the test that writes `contract/openapi.json` (`spring-boot` skill, `references/ui-contract.md`).
+- **Status endpoints:** `health` and `info` answer without a token, everything else under `/actuator` does not.
+
+Run them with `./mvnw clean verify`. With `@Testcontainers(disabledWithoutDocker = true)` they are skipped silently when Docker is not available, so check the test report shows them as run, not skipped. With Podman instead of Docker:
+
+```bash
+# macOS (podman machine); on Linux: unix:///run/user/$(id -u)/podman/podman.sock
+export DOCKER_HOST=unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')
+export TESTCONTAINERS_RYUK_DISABLED=true
+./mvnw clean verify
 ```
 
 ---
